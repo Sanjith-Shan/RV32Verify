@@ -12,6 +12,8 @@
 //   +hang_cycles=<n>     watchdog: max cycles between two retirements
 //   +trace=<file>        write a retirement trace (one line per instruction)
 //   +quiet               suppress per-run summary lines except the result
+//   +save_prog=<prefix>  (with +gen) save the program as <prefix>.hex / .meta
+//   +end_trap_ok         (with +hex) the program is expected to end in a trap
 
 class tb_cfg;
   string       hex_file    = "";
@@ -26,6 +28,8 @@ class tb_cfg;
   string       trace_file  = "";
   string       test_name   = "";
   bit          quiet       = 0;
+  bit          end_trap_ok = 0;   // hex mode: program is meant to end in a trap
+  string       save_prog   = ""; // gen mode: write the program to <prefix>.hex/.meta
 
   function void from_plusargs();
     string s;
@@ -40,6 +44,8 @@ class tb_cfg;
     void'($value$plusargs("trace=%s", trace_file));
     void'($value$plusargs("name=%s", test_name));
     if ($test$plusargs("quiet")) quiet = 1;
+    if ($test$plusargs("end_trap_ok")) end_trap_ok = 1;
+    void'($value$plusargs("save_prog=%s", save_prog));
     if (use_gen && test_name == "") test_name = $sformatf("random_seed%0d", seed);
   endfunction
 

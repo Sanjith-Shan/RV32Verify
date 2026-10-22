@@ -75,7 +75,11 @@ module rv32_hazard
 
   // ----------------------------------------------------------- load-use
   logic dep_rs1, dep_rs2;
+`ifdef BUG_LOADUSE_IGNORES_USE
+  assign dep_rs1 = id_ctrl.rs1 == ex_ctrl.rd;                          // injected
+`else
   assign dep_rs1 = id_ctrl.use_rs1 && id_ctrl.rs1 == ex_ctrl.rd;
+`endif
 `ifdef BUG_LOADUSE_RS1_ONLY
   assign dep_rs2 = 1'b0;                                               // injected
 `else
@@ -98,8 +102,16 @@ module rv32_hazard
 `endif
   assign stall_if   = mem_wait || load_use;
   assign hold_ex    = mem_wait;
+`ifdef BUG_FLUSH_EX_MISSING
+  assign bubble_ex  = mem_trap || load_use;                           // injected
+`else
   assign bubble_ex  = redirect || mem_trap || load_use;
+`endif
   assign hold_mem   = mem_wait;
+`ifdef BUG_TRAP_NO_KILL
+  assign bubble_mem = 1'b0;                                            // injected
+`else
   assign bubble_mem = mem_trap;
+`endif
 
 endmodule

@@ -102,11 +102,31 @@ class tb_env;
       if (!cfg.quiet) $display("[env] generated %0d instructions (%0d words incl. data), seed %0d",
                                prog.n_instr, prog.words.size(), cfg.seed);
       if ($test$plusargs("dump_prog")) prog.dump("program.lst");
+      if (cfg.save_prog != "") save_program();
     end else begin
       if (cfg.hex_file == "") $fatal(1, "[env] need +hex=<file> or +gen");
       if (!mem.load_hex(cfg.hex_file, cfg.reset_pc)) $fatal(1, "[env] cannot read %s", cfg.hex_file);
       if (iss_load_hex(cfg.hex_file, cfg.reset_pc) == 0) $fatal(1, "[env] ISS cannot read %s", cfg.hex_file);
     end
+  endfunction
+
+  // Write the generated program in the same hex format riscv-tests use, so it
+  // can be replayed (+hex) against other builds with identical stimulus.
+  function void save_program();
+    int fd = $fopen({cfg.save_prog, ".hex"}, "w");
+    bit [31:0] expect_idx = 32'hffff_ffff;
+    foreach (prog.words[a]) begin
+      bit [31:0] idx = (a - cfg.reset_pc) >> 2;
+      if (idx != expect_idx) $fdisplay(fd, "@%08h", idx);
+      $fdisplay(fd, "%08h", prog.words[a]);
+      expect_idx = idx + 1;
+    end
+    $fclose(fd);
+    fd = $fopen({cfg.save_prog, ".meta"}, "w");
+    $fdisplay(fd, "tohost=0x%08h", prog.tohost);
+    $fdisplay(fd, "ends_in_trap=%0d", prog.ends_in_trap);
+    $fdisplay(fd, "end_kind=%s", prog.end_kind);
+    $fclose(fd);
   endfunction
 
   function int end_of_test_checks(output string msg);
@@ -165,7 +185,7 @@ class tb_env;
         if (v == 32'd1) pass = 1;
         else reason = $sformatf("program reported failure: tohost=%0d (test %0d)", v, v >> 1);
       end else if (ender.saw_trap) begin
-        if (cfg.use_gen && prog.ends_in_trap) pass = 1;
+        if ((cfg.use_gen && prog.ends_in_trap) || cfg.end_trap_ok) pass = 1;
         else reason = $sformatf("unexpected trap, cause %0d at pc %08h", ender.last.cause, ender.last.pc);
       end
     end

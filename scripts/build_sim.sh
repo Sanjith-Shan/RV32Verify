@@ -9,7 +9,7 @@ mkdir -p "$OUT"
 JOBS="${JOBS:-$(nproc)}"
 verilator --binary --timing --assert --coverage-user -j "$JOBS" \
   --timescale 1ns/1ps --top-module tb_top \
-  -Wno-UNDRIVEN -Wno-PROCASSINIT \
+  -Wno-UNDRIVEN -Wno-PROCASSINIT -Wno-WIDTH \
   -I"$ROOT/rtl" -I"$ROOT/tb" \
   --Mdir "$OUT/obj" -o "$OUT/simv" \
   "$@" \

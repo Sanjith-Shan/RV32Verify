@@ -9,9 +9,9 @@ The verification side is where the effort goes. The core is deliberately a
 conventional in-order pipeline so that each part of the bench can be
 explained, and its results checked, end to end.
 
-> Status: **Milestone 1 complete** (core, retirement port, reference model,
-> lockstep scoreboard, riscv-tests, regression runner). Constrained-random
-> stimulus, functional coverage, assertions and bug injection are in progress.
+> Status: **Milestones 1 and 2 complete** (core, reference model, lockstep
+> scoreboard, riscv-tests, constrained-random generator, functional coverage,
+> assertions). Bug injection and formal verification are in progress.
 > All numbers below come from [docs/RESULTS.md](docs/RESULTS.md), which lists
 > the command behind each one.
 
@@ -21,8 +21,11 @@ explained, and its results checked, end to end.
 |---|---|
 | RTL lint, Verilator `-Wall` | clean |
 | Reference model alone, riscv-tests rv32ui | 41 / 42 pass |
-| Core vs model in lockstep, rv32ui, no wait states | 41 / 42 pass |
-| Same, 30% random wait states on both memory ports | 41 / 42 pass |
+| Core vs model in lockstep, rv32ui, no wait states / 30% wait states | 41 / 42 pass in both |
+| Constrained-random, seeds 1-250, all knob and wait-state profiles | 250 / 250 pass, 244,599 instructions checked in lockstep |
+| Functional coverage over those runs | 98.2% of 1311 bins; every pipeline-hazard item 100% |
+| 23 SVA pipeline invariants | no failures |
+| Functional RTL bugs found by the bench in the core | none so far (two bugs found and fixed in the coverage model, see [BUGS_FOUND](docs/BUGS_FOUND.md)) |
 
 The one failing test, `ma_data`, needs misaligned loads and stores to
 succeed. This core raises an address-misaligned exception instead (the ISA
@@ -40,8 +43,11 @@ tb/         SystemVerilog bench: interfaces, memory agent, RVFI monitor,
             lockstep scoreboard, environment, top
 tests/env/  minimal bare-metal environment for the official riscv-tests
 scripts/    toolchain setup, test build, simulator build, lint, regression
-docs/       results and (as they land) the verification plan, coverage,
-            bug-injection and debug write-ups
+tb/gen/     constrained-random instruction generator (SV classes, randomize())
+tb/sva/     pipeline assertions, bound into the core
+formal/     riscv-formal harness
+docs/       verification plan, coverage, bug injection, bugs found,
+            results, interview walkthrough
 ```
 
 ### The core
@@ -102,8 +108,11 @@ loader, so a loader bug cannot corrupt both sides in the same way.
 Linux (or WSL2) with `g++`, `make`, `python3`, `curl`, `git`:
 
 ```
-./regress                 # lint, model qualification, riscv-tests
+./regress                 # lint, model qualification, riscv-tests, 25 random seeds
 ./regress riscv-tests     # the official suite, with and without wait states
+./regress random -n 200   # constrained-random seeds 1..200
+./regress coverage -n 250 # random + riscv-tests with a merged coverage report
+./regress bugs            # bug-injection campaign
 ```
 
 The first run downloads the toolchain into `.cache/toolchain` (OSS CAD Suite

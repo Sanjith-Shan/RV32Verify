@@ -10,16 +10,21 @@ interface pipe_probe_if (input logic clk);
   logic        ex_valid;
   logic [31:0] ex_insn;
   logic        ex_use_rs1, ex_use_rs2;
+  logic [4:0]  ex_rs1, ex_rs2, ex_rd;
+  logic        ex_is_load, ex_rf_we;
   logic [1:0]  fwd_a, fwd_b;           // rv32_pkg::fwd_sel_e
   logic        ex_redirect_req;
   // MEM
   logic        mem_valid;
   logic        mem_is_load, mem_is_store;
+  logic        mem_rf_we;
+  logic [4:0]  mem_rd;
   logic        mem_wait;
   logic        mem_trap;
   // WB
   logic        wb_valid;
   logic        rf_we;
+  logic        wb_rf_we;
   logic [4:0]  rf_waddr;
   // hazard controls
   logic        load_use;

@@ -1,0 +1,41 @@
+name: regress
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  regress:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache toolchain
+        uses: actions/cache@v4
+        with:
+          path: .cache/toolchain
+          key: toolchain-${{ hashFiles('scripts/setup_toolchain.sh') }}
+
+      - name: Toolchain (OSS CAD Suite + xPack RISC-V GCC, project-local)
+        run: bash scripts/setup_toolchain.sh
+
+      - name: Lint
+        run: ./regress lint
+
+      - name: Reference model on riscv-tests
+        run: ./regress iss
+
+      - name: riscv-tests in lockstep (no wait states, 30% wait states)
+        run: ./regress riscv-tests
+
+      - name: Constrained-random, 25 seeds (every knob x wait profile)
+        run: ./regress random -n 25
+
+      - name: Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports
+          path: build/reports/

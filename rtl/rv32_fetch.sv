@@ -51,8 +51,10 @@ module rv32_fetch
         if_id.pc    <= pc;
         if_id.insn  <= imem_rdata;
         pc          <= pc + 32'd4;
+`ifndef BUG_IMEM_WAIT_DUP
       end else begin
         if_id.valid <= 1'b0;
+`endif
       end
     end
   end

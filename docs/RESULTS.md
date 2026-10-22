@@ -22,3 +22,15 @@ no trap handler to emulate the access, so the test stops at its first
 misaligned load. The reference model makes the same choice independently, and
 the lockstep checker confirms the core and the model agree on the trap
 (cause 4, load address misaligned, at the same PC).
+
+## Milestone 2 (2026-10-22)
+
+| Result | Number | Command |
+|---|---|---|
+| Constrained-random regression, seeds 1-250 (all 25 knob x wait-state combinations, 10 times each) | 250 / 250 pass, 244,599 instructions retired and checked in lockstep, 383,214 cycles | `./regress coverage -n 250 -j 2` |
+| Same run: riscv-tests rv32ui in both wait-state profiles | 41 / 42 pass in each (`ma_data` expected fail) | same |
+| Functional coverage, merged over those 334 runs | **98.2% (1288 / 1311 bins)**; every pipeline, dependency, branch, load/store, x0 and trap item 100%; 23 open bins, all operand-value pairs in the ALU crosses | same; report in [COVERAGE.md](COVERAGE.md) |
+| SVA: 23 assertions bound into the core | 0 failures in all runs above | same |
+| SVA cover properties | load-use then forward 1744, redirect deferred by a data wait 321, trap beats a younger redirect 21, wait then load-use 70, both operands forwarded from different stages 427 | same |
+| Wall time of that regression | 15 min 23 s (2 parallel jobs) | same |
+| Random program generation time | about 6.7 s per 950-instruction program, almost all in the z3 constraint solver; was about 9.5 s before immediates were moved out of the solver into `post_randomize()` | `/usr/bin/time ./sim/base/simv +gen +seed=1 +quiet` (in `build/`, with `scripts/env.sh` sourced) |

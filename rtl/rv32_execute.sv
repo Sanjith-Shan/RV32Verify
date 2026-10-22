@@ -127,7 +127,11 @@ module rv32_execute
     end
   end
 
+`ifdef BUG_FENCEI_NO_FLUSH
+  assign redirect_req = id_ex.valid && !trap && taken;                  // injected
+`else
   assign redirect_req = id_ex.valid && !trap && (taken || c.is_fencei);
+`endif
   assign redirect_pc  = taken ? target : pc4;
 
   assign result = (c.wb_sel == WB_PC4) ? pc4 : alu_y;

@@ -75,7 +75,11 @@ module rv32_memory
 `endif
       3'b001:  load_val = {{16{shifted[15]}}, shifted[15:0]};        // LH
       3'b100:  load_val = {24'b0, shifted[7:0]};                     // LBU
+`ifdef BUG_LHU_SIGN_EXTEND
+      3'b101:  load_val = {{16{shifted[15]}}, shifted[15:0]};        // injected
+`else
       3'b101:  load_val = {16'b0, shifted[15:0]};                    // LHU
+`endif
       default: load_val = dmem_rdata;                                // LW
     endcase
   end
@@ -90,8 +94,10 @@ module rv32_memory
   always_ff @(posedge clk or negedge rst_n) begin
     if (!rst_n) begin
       mem_wb <= '0;
+`ifndef BUG_WAIT_NO_BUBBLE
     end else if (mem_wait) begin
       mem_wb.valid <= 1'b0;
+`endif
     end else begin
       mem_wb.valid     <= ex_mem.valid;
       mem_wb.pc        <= ex_mem.pc;

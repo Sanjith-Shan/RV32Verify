@@ -17,6 +17,7 @@ import datetime as dt
 import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -125,6 +126,9 @@ def run_sim(simv, args, timeout=600):
         res["status"] = "FAIL"
         res["reason"] = "no RESULT line (simulator crashed or assertion fired)"
     sva = re.search(r"(SVA[^\n]*)", out)
+    t = re.search(r"^\[(\d+)\] %(Error|Fatal)", out, re.M)
+    if t:
+        res["fail_cycle"] = int(t.group(1)) // 10000   # ps -> 10 ns clock cycles
     if res["status"] == "FAIL":
         res["checker"] = classify(out)
         if sva:
@@ -186,7 +190,8 @@ def suite_riscv_tests(a):
         for n in names:
             meta = dict(l.strip().split("=") for l in open(os.path.join(TESTS, n + ".meta")))
             args = [f"+hex=tests/rv32ui/{n}.hex", f"+tohost={meta['tohost'][2:]}", f"+name={n}",
-                    f"+imem_stall={ist}", f"+dmem_stall={dst}", "+seed=1", "+verilator+seed+1", "+quiet"]
+                    f"+imem_stall={ist}", f"+dmem_stall={dst}", "+seed=1", "+verilator+seed+1", "+quiet",
+                    cov_arg("riscv-tests", f"{prof}_{n}")]
             jobs.append((prof, n, args))
     res = pmap(lambda j: dict(run_sim(simv, j[2]), profile=j[0], test=j[1]), jobs, a.jobs)
     ok = True
@@ -209,17 +214,39 @@ def suite_riscv_tests(a):
     return ok
 
 
-def random_args(seed, extra=()):
-    # Each seed draws its own wait-state profile so stalls are covered across the regression.
-    prof = [(0, 0), (20, 0), (0, 30), (25, 25), (50, 50)][seed % 5]
-    return ["+gen", f"+seed={seed}", f"+verilator+seed+{seed}", f"+imem_stall={prof[0]}",
-            f"+dmem_stall={prof[1]}", "+quiet"] + list(extra)
+def cov_arg(suite, name):
+    # every run writes its own coverage database: build/cov/<suite>/<name>.dat
+    d = os.path.join(BUILD, "cov", suite)
+    os.makedirs(d, exist_ok=True)
+    return f"+verilator+coverage+file+cov/{suite}/{name}.dat"
+
+
+# Random test variants: generator knob profiles (see tb/gen/rv_gen.svh). Seed s
+# uses wait-state profile s % 5 and knob profile (s // 5) % 5, so every 25
+# consecutive seeds cover all 25 combinations.
+WAIT_PROFILES = [(0, 0), (20, 0), (0, 30), (25, 25), (50, 50)]
+KNOB_PROFILES = [
+    ("default",    []),
+    ("alu_corner", ["+w_alu_r=40", "+w_alu_i=30", "+w_shift=15", "+w_seed=35", "+p_special=50",
+                    "+p_dep=80", "+dep_max=3", "+w_load=6", "+w_store=4", "+w_branch=6"]),
+    ("mem_alias",  ["+w_load=30", "+w_store=25", "+mem_window=16", "+p_alias=70", "+w_reload=8"]),
+    ("branchy",    ["+w_branch=30", "+w_jal=6", "+w_jalr=6", "+p_self_cmp=40", "+skip_max=3", "+p_loop=6"]),
+    ("hazard",     ["+p_dep=90", "+dep_max=2", "+w_load=25", "+w_store=12"]),
+]
+
+
+def random_args(seed, extra=(), tag="random"):
+    w = WAIT_PROFILES[seed % 5]
+    k = KNOB_PROFILES[(seed // 5) % 5]
+    return (["+gen", f"+seed={seed}", f"+verilator+seed+{seed}", f"+imem_stall={w[0]}",
+             f"+dmem_stall={w[1]}", f"+name=seed{seed}_{k[0]}", "+quiet", cov_arg(tag, f"seed{seed}")]
+            + k[1] + list(extra))
 
 
 def suite_random(a, extra=(), simv=None, tag="random"):
     simv = simv or build()
     seeds = list(range(a.seed0, a.seed0 + a.n))
-    res = pmap(lambda s: dict(run_sim(simv, random_args(s, extra)), seed=s), seeds, a.jobs)
+    res = pmap(lambda s: dict(run_sim(simv, random_args(s, extra, tag)), seed=s), seeds, a.jobs)
     npass = sum(r["status"] == "PASS" for r in res)
     retired = sum(int(r.get("retired", 0)) for r in res)
     cycles = sum(int(r.get("cycles", 0)) for r in res)
@@ -230,6 +257,25 @@ def suite_random(a, extra=(), simv=None, tag="random"):
     save(tag, {"seeds": [seeds[0], seeds[-1]], "pass": npass, "total": len(res), "retired": retired,
                "cycles": cycles, "runs": res})
     return npass == len(res)
+
+
+def suite_coverage(a):
+    """Fresh coverage databases from riscv-tests + N random seeds, merged into one report."""
+    for s in ("random", "riscv-tests"):
+        shutil.rmtree(os.path.join(BUILD, "cov", s), ignore_errors=True)
+    ok = suite_riscv_tests(a)
+    ok &= suite_random(a)
+    dats = []
+    for s in ("riscv-tests", "random"):
+        d = os.path.join(BUILD, "cov", s)
+        dats += sorted(os.path.join(d, f) for f in os.listdir(d) if f.endswith(".dat"))
+    os.makedirs(REPORTS, exist_ok=True)
+    r = sh(["python3", "scripts/cov_report.py", "-o", os.path.join(REPORTS, "coverage.md"),
+            "--json", os.path.join(REPORTS, "coverage.json"),
+            "--title", f"Functional coverage: rv32ui (2 wait-state profiles) + random seeds "
+                       f"{a.seed0}..{a.seed0 + a.n - 1}"] + dats)
+    log("[coverage] " + r.stderr.strip() + f"  -> build/reports/coverage.md")
+    return ok
 
 
 def main():
@@ -247,11 +293,15 @@ def main():
         return 0
     if a.suite == "all":
         ok = True
-        for name, fn in [("lint", suite_lint), ("iss", suite_iss), ("riscv-tests", suite_riscv_tests)]:
+        if a.n == 50:
+            a.n = 25        # default for "all": 25 seeds = every knob x wait profile once
+        for name, fn in [("lint", suite_lint), ("iss", suite_iss), ("riscv-tests", suite_riscv_tests),
+                         ("random", suite_random)]:
             ok &= bool(fn(a))
         log("REGRESSION " + ("PASS" if ok else "FAIL"))
         return 0 if ok else 1
-    fn = {"lint": suite_lint, "iss": suite_iss, "riscv-tests": suite_riscv_tests, "random": suite_random}.get(a.suite)
+    fn = {"lint": suite_lint, "iss": suite_iss, "riscv-tests": suite_riscv_tests, "random": suite_random,
+          "coverage": suite_coverage}.get(a.suite)
     if fn is None:
         import importlib.util
         spec = importlib.util.spec_from_file_location(a.suite, os.path.join(ROOT, "scripts", f"suite_{a.suite}.py"))

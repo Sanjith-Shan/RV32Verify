@@ -107,7 +107,11 @@ module rv32_decoder
         ctrl.b_imm   = 1'b1;
         ctrl.imm     = imm_i;
         unique case (funct3)
+`ifdef BUG_ADDI_AS_SUB
+          3'b000: ctrl.alu_op = funct7[5] ? ALU_SUB : ALU_ADD;           // injected
+`else
           3'b000: ctrl.alu_op = ALU_ADD;
+`endif
           3'b010: ctrl.alu_op = ALU_SLT;
           3'b011: ctrl.alu_op = ALU_SLTU;
           3'b100: ctrl.alu_op = ALU_XOR;
@@ -118,7 +122,11 @@ module rv32_decoder
             if (funct7 != 7'b0000000) ctrl.trap = 1'b1;
           end
           3'b101: begin
+`ifdef BUG_SRAI_AS_SRLI
+            ctrl.alu_op = ALU_SRL;                                       // injected
+`else
             ctrl.alu_op = funct7[5] ? ALU_SRA : ALU_SRL;
+`endif
             if ({funct7[6], funct7[4:0]} != 6'b0) ctrl.trap = 1'b1;
           end
           default: ;
