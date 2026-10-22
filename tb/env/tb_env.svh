@@ -179,6 +179,22 @@ class tb_env;
       if (cycles >= longint'(cfg.max_cycles)) begin reason = "timeout"; break; end
     end
 
+    // Drain: keep the core running and every checker live for a while after
+    // the end condition. Whatever is still in the pipeline must either keep
+    // matching the model (a tohost ending loops on "j .") or, after a trap,
+    // never retire at all. Without this window a trap that fails to kill the
+    // instruction behind it goes unseen (found by the bug-injection campaign).
+    if (reason == "" && ender.done) begin
+      longint unsigned retired_at_end = mon.retired;
+      repeat (cfg.drain_cycles) begin
+        @(negedge bus.clk);
+        #2;
+        if (sb.failed) begin reason = "lockstep mismatch"; break; end
+      end
+      if (reason == "" && ender.saw_trap && mon.retired != retired_at_end)
+        reason = $sformatf("%0d instruction(s) retired after the trap", mon.retired - retired_at_end);
+    end
+
     if (reason == "") begin
       if (ender.saw_tohost) begin
         bit [31:0] v = mem.read(cfg.tohost);

@@ -346,12 +346,14 @@ class rv_gen;
         emit(enc_i({1'b0, ins.alt, 5'b0, ins.shamt}, ins.rs1, ins.f3, ins.rd, 7'b0010011));
         note_rd(ins.rd);
       end
-      K_LUI: begin
-        emit(enc_u(ins.imm20, ins.rd, 7'b0110111));
-        note_rd(ins.rd);
-      end
-      K_AUIPC: begin
-        emit(enc_u(ins.imm20, ins.rd, 7'b0010111));
+      K_LUI, K_AUIPC: begin
+        // Field aliasing: half the time the bits where an rs1 field would be
+        // (imm20[7:3] = insn[19:15]) name the previous destination. The
+        // instruction does not read rs1, so a hazard unit that forgets to
+        // check "is this field a real source" stalls for nothing.
+        bit [19:0] im = ins.imm20;
+        if (recent.size() > 0 && $urandom_range(1)) im[7:3] = recent[0];
+        emit(enc_u(im, ins.rd, ins.kind == K_LUI ? 7'b0110111 : 7'b0010111));
         note_rd(ins.rd);
       end
       K_LOAD: begin

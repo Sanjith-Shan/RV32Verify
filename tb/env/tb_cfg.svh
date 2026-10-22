@@ -10,6 +10,7 @@
 //   +dmem_stall=<pct>    % of data accesses cycles the data port is not ready
 //   +max_cycles=<n>      hard timeout
 //   +hang_cycles=<n>     watchdog: max cycles between two retirements
+//   +drain_cycles=<n>    cycles to keep checking after the end condition (default 30)
 //   +trace=<file>        write a retirement trace (one line per instruction)
 //   +quiet               suppress per-run summary lines except the result
 //   +save_prog=<prefix>  (with +gen) save the program as <prefix>.hex / .meta
@@ -23,6 +24,7 @@ class tb_cfg;
   int unsigned dmem_stall  = 0;
   int unsigned max_cycles  = 500000;
   int unsigned hang_cycles = 1000;
+  int unsigned drain_cycles = 30;
   bit [31:0]   reset_pc    = 32'h8000_0000;
   bit [31:0]   tohost      = 32'h8000_1000;
   string       trace_file  = "";
@@ -40,6 +42,7 @@ class tb_cfg;
     void'($value$plusargs("dmem_stall=%d", dmem_stall));
     void'($value$plusargs("max_cycles=%d", max_cycles));
     void'($value$plusargs("hang_cycles=%d", hang_cycles));
+    void'($value$plusargs("drain_cycles=%d", drain_cycles));
     if ($value$plusargs("tohost=%s", s)) tohost = s.atohex();
     void'($value$plusargs("trace=%s", trace_file));
     void'($value$plusargs("name=%s", test_name));

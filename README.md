@@ -9,9 +9,10 @@ The verification side is where the effort goes. The core is deliberately a
 conventional in-order pipeline so that each part of the bench can be
 explained, and its results checked, end to end.
 
-> Status: **Milestones 1 and 2 complete** (core, reference model, lockstep
-> scoreboard, riscv-tests, constrained-random generator, functional coverage,
-> assertions). Bug injection and formal verification are in progress.
+> Status: **Milestones 1, 2 and 3 complete** (core, reference model,
+> lockstep scoreboard, riscv-tests, constrained-random generator, functional
+> coverage, assertions, bug-injection campaign). Formal verification with
+> riscv-formal is in progress.
 > All numbers below come from [docs/RESULTS.md](docs/RESULTS.md), which lists
 > the command behind each one.
 
@@ -22,10 +23,13 @@ explained, and its results checked, end to end.
 | RTL lint, Verilator `-Wall` | clean |
 | Reference model alone, riscv-tests rv32ui | 41 / 42 pass |
 | Core vs model in lockstep, rv32ui, no wait states / 30% wait states | 41 / 42 pass in both |
-| Constrained-random, seeds 1-250, all knob and wait-state profiles | 250 / 250 pass, 244,599 instructions checked in lockstep |
-| Functional coverage over those runs | 98.2% of 1311 bins; every pipeline-hazard item 100% |
+| 4 directed tests (FENCE.I over in-flight code, instructions behind a trap) | 4 / 4 pass in both wait profiles |
+| Constrained-random, seeds 1-250, all knob and wait-state profiles | 250 / 250 pass, 248,151 instructions checked in lockstep |
+| Functional coverage over those runs | 97.7% of 1312 bins; every pipeline-hazard item 100%; the 30 open bins are ALU operand-value pairs |
 | 23 SVA pipeline invariants | no failures |
-| Functional RTL bugs found by the bench in the core | none so far (two bugs found and fixed in the coverage model, see [BUGS_FOUND](docs/BUGS_FOUND.md)) |
+| Bug injection: 23 realistic RTL bugs, bench as first built | **21 / 23 caught** (19 / 23 with assertions off) |
+| Same, after closing the two holes it exposed | 23 / 23 caught (21 / 23 with assertions off; the 2 only an assertion can see) |
+| Functional RTL bugs found by the bench in the core | none so far; 5 real bugs and holes found and fixed in the bench itself, see [BUGS_FOUND](docs/BUGS_FOUND.md) |
 
 The one failing test, `ma_data`, needs misaligned loads and stores to
 succeed. This core raises an address-misaligned exception instead (the ISA

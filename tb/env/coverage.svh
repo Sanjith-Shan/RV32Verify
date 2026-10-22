@@ -60,7 +60,7 @@ class coverage extends rvfi_subscriber;
   bit [2:0]     redirect_kind;        // 1 branch, 2 jal, 3 jalr, 4 fence.i
   bit           c_redirect_deferred, c_loaduse_during_wait, c_trap_kills_redirect,
                 c_trap_kills_loaduse, c_redirect_during_imem_wait, c_stall_then_forward,
-                c_wait_refresh_operand, c_back_to_back_redirect;
+                c_wait_refresh_operand, c_back_to_back_redirect, c_unused_field_matches_load;
 
   // history for distances and sequences
   longint unsigned retire_idx = 0;
@@ -172,6 +172,7 @@ class coverage extends rvfi_subscriber;
     cp_stall_then_forward:       coverpoint c_stall_then_forward       { bins hit = {1}; }
     cp_wait_refresh_operand:     coverpoint c_wait_refresh_operand     { bins hit = {1}; }
     cp_back_to_back_redirect:    coverpoint c_back_to_back_redirect    { bins hit = {1}; }
+    cp_unused_field_matches_load: coverpoint c_unused_field_matches_load { bins hit = {1}; }
   endgroup
 
   function new(virtual pipe_probe_if probe);
@@ -371,6 +372,11 @@ class coverage extends rvfi_subscriber;
                                   ((ex_a && fwd_a == 2'd2) || (ex_b && fwd_b == 2'd2));
     c_wait_refresh_operand      = probe.mem_wait && ((ex_a && fwd_a == 2'd2) || (ex_b && fwd_b == 2'd2));
     c_back_to_back_redirect     = probe.redirect && cycles_since_redirect == 3;
+    // a register field the ID instruction does NOT read names the load in EX:
+    // the precondition for a spurious load-use stall
+    c_unused_field_matches_load = probe.id_valid && probe.ex_valid && probe.ex_is_load && probe.ex_rf_we &&
+                                  ((!probe.id_use_rs1 && probe.id_rs1 == probe.ex_rd) ||
+                                   (!probe.id_use_rs2 && probe.id_rs2 == probe.ex_rd));
     cg_pipe.sample();
 
     if (probe.load_use && !probe.mem_wait) cycles_since_load_use = 0;

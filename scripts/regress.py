@@ -26,6 +26,22 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BUILD = os.path.join(ROOT, "build")
 REPORTS = os.path.join(BUILD, "reports")
 TESTS = os.path.join(BUILD, "tests", "rv32ui")
+TEST_GROUPS = ["rv32ui", "directed"]     # build/tests/<group>/<name>.hex
+
+
+def list_tests():
+    """(group, name, meta) for every built program test: rv32ui, then directed."""
+    out = []
+    for g in TEST_GROUPS:
+        d = os.path.join(BUILD, "tests", g)
+        if not os.path.isdir(d):
+            continue
+        for f in sorted(os.listdir(d)):
+            if f.endswith(".hex"):
+                n = f[:-4]
+                meta = dict(l.strip().split("=", 1) for l in open(os.path.join(d, n + ".meta")))
+                out.append((g, n, meta))
+    return out
 TOOLCHAIN = os.path.join(ROOT, ".cache", "toolchain")
 
 # Tests that are expected to fail, and why. Reported separately, never hidden.
@@ -93,7 +109,8 @@ def build(variant="base", defines=(), force=False):
 
 
 def ensure_tests():
-    if not os.path.isdir(TESTS) or not any(f.endswith(".hex") for f in os.listdir(TESTS)):
+    d = os.path.join(BUILD, "tests", "directed")
+    if not os.path.isdir(TESTS) or not any(f.endswith(".hex") for f in os.listdir(TESTS)) or not os.path.isdir(d):
         r = sh(["bash", "scripts/build_riscv_tests.sh"])
         if r.returncode != 0:
             log(r.stdout + r.stderr)
@@ -145,6 +162,8 @@ def classify(out):
         return "scoreboard"
     if "END-OF-TEST STATE MISMATCH" in out:
         return "end-state"
+    if "retired after the trap" in out:
+        return "drain"
     if "hang:" in out:
         return "watchdog"
     if "timeout" in out:
@@ -184,15 +203,14 @@ def suite_iss(a):
 def suite_riscv_tests(a):
     ensure_tests()
     simv = build()
-    names = sorted(f[:-4] for f in os.listdir(TESTS) if f.endswith(".hex"))
     jobs = []
     for prof, ist, dst in STALL_PROFILES:
-        for n in names:
-            meta = dict(l.strip().split("=") for l in open(os.path.join(TESTS, n + ".meta")))
-            args = [f"+hex=tests/rv32ui/{n}.hex", f"+tohost={meta['tohost'][2:]}", f"+name={n}",
+        for g, n, meta in list_tests():
+            args = [f"+hex=tests/{g}/{n}.hex", f"+tohost={meta['tohost'][2:]}", f"+name={n}",
+                    *(["+end_trap_ok"] if n.startswith("trap_") else []),
                     f"+imem_stall={ist}", f"+dmem_stall={dst}", "+seed=1", "+verilator+seed+1", "+quiet",
                     cov_arg("riscv-tests", f"{prof}_{n}")]
-            jobs.append((prof, n, args))
+            jobs.append((prof, n if g == "rv32ui" else f"{g}/{n}", args))
     res = pmap(lambda j: dict(run_sim(simv, j[2]), profile=j[0], test=j[1]), jobs, a.jobs)
     ok = True
     summary = {}
@@ -204,7 +222,10 @@ def suite_riscv_tests(a):
         upass = [r["test"] for r in rs if r["status"] == "PASS" and r["test"] in EXPECTED_FAIL]
         summary[prof] = {"total": len(rs), "pass": npass, "expected_fail": xfail, "unexpected_fail": ufail,
                          "unexpected_pass": upass}
-        log(f"[riscv-tests] {prof:8s} {npass}/{len(rs)} pass; expected fail: {', '.join(xfail) or 'none'}; "
+        nd = [r for r in rs if r["test"].startswith("directed/")]
+        ndp = sum(r["status"] == "PASS" for r in nd)
+        log(f"[riscv-tests] {prof:8s} rv32ui {npass - ndp}/{len(rs) - len(nd)} pass, directed {ndp}/{len(nd)} pass; "
+            f"expected fail: {', '.join(xfail) or 'none'}; "
             f"unexpected fail: {', '.join(ufail) or 'none'}")
         for r in rs:
             if r["test"] in ufail:

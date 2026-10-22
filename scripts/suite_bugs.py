@@ -82,24 +82,20 @@ def replay_args(R, s, meta, sva):
 def rv32ui_jobs(R, sva):
     jobs = []
     for prof, ist, dst in R.STALL_PROFILES:
-        for f in sorted(os.listdir(R.TESTS)):
-            if not f.endswith(".hex"):
-                continue
-            n = f[:-4]
+        for g, n, meta in R.list_tests():
             if n in R.EXPECTED_FAIL:
                 continue
-            meta = dict(l.strip().split("=") for l in open(os.path.join(R.TESTS, n + ".meta")))
-            args = [f"+hex=tests/rv32ui/{n}.hex", f"+tohost={meta['tohost'][2:]}", f"+name={n}_{prof}",
+            args = [f"+hex=tests/{g}/{n}.hex", *(["+end_trap_ok"] if n.startswith("trap_") else []), f"+tohost={meta['tohost'][2:]}", f"+name={n}_{prof}",
                     f"+imem_stall={ist}", f"+dmem_stall={dst}", "+seed=1", "+verilator+seed+1", "+quiet"]
             if not sva:
                 args.append("+verilator+noassert")
-            jobs.append(("rv32ui", n, args))
+            jobs.append((g, n, args))
     return jobs
 
 
 def summarize(name, runs):
     out = {"runs": len(runs), "fail": 0, "checkers": {}, "first_seed": None, "min_cycle": None,
-           "rv32ui_fail": 0, "random_fail": 0, "first_reason": None}
+           "rv32ui_fail": 0, "directed_fail": 0, "random_fail": 0, "first_reason": None}
     for r in runs:
         if r["status"] == "PASS":
             continue
@@ -136,7 +132,7 @@ def run(a, R):
             entry["with_sva" if sva else "without_sva"] = summarize(bug, res)
         w, wo = entry["with_sva"], entry["without_sva"]
         R.log(f"[bugs] {bug:26s} {'CAUGHT' if w['detected'] else 'MISSED':6s} "
-              f"fails {w['fail']:3d}/{w['runs']} (rv32ui {w['rv32ui_fail']}, random {w['random_fail']}); "
+              f"fails {w['fail']:3d}/{w['runs']} (rv32ui {w['rv32ui_fail']}, directed {w['directed_fail']}, random {w['random_fail']}); "
               f"first seed {w['first_seed']}; min cycle {w['min_cycle']}; checkers {w['checkers']}; "
               f"without SVA: {wo['fail']} fails {wo['checkers']}")
         results.append(entry)
@@ -149,13 +145,13 @@ def run(a, R):
 
 
 def write_md(R, results, n):
-    L = ["| Bug | Area | Caught | Failing runs (rv32ui / random) | First failing seed | Earliest failing cycle | Checkers that stopped runs | Without SVA |",
+    L = ["| Bug | Area | Caught | Failing runs (rv32ui / directed / random) | First failing seed | Earliest failing cycle | Checkers that stopped runs | Without SVA |",
          "|---|---|---|---|---:|---:|---|---|"]
     for e in results:
         w, wo = e["with_sva"], e["without_sva"]
         ch = ", ".join(f"{k} {v}" for k, v in sorted(w["checkers"].items(), key=lambda kv: -kv[1]))
         wch = ", ".join(f"{k} {v}" for k, v in sorted(wo["checkers"].items(), key=lambda kv: -kv[1]))
         L.append(f"| `{e['bug']}` | {e['area']} | {'yes' if w['detected'] else '**no**'} | "
-                 f"{w['rv32ui_fail']} / {w['random_fail']} | {w['first_seed'] or '-'} | {w['min_cycle'] or '-'} | "
+                 f"{w['rv32ui_fail']} / {w['directed_fail']} / {w['random_fail']} | {w['first_seed'] or '-'} | {w['min_cycle'] or '-'} | "
                  f"{ch or '-'} | {('caught: ' + wch) if wo['detected'] else '**missed**'} |")
     open(os.path.join(R.REPORTS, "bugs.md"), "w").write("\n".join(L) + "\n")

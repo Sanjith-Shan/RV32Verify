@@ -31,6 +31,7 @@ the pipeline gets there.
 | End-of-test state compare | all 31 registers and every memory word equal the model after the last retirement, catching writes that never appear at retirement | `tb/env/tb_env.svh` |
 | SVA | pipeline invariants at the cycle they break: hazard detection, forwarding priority, stall holds, flushes, x0, retirement order | `tb/sva/rv32_core_sva.sv` |
 | Watchdog / timeout | no retirement for `hang_cycles` (deadlock, lost handshake) | `tb/env/tb_env.svh` |
+| Drain window | after the end condition the core keeps running for 30 cycles with every checker live; after a trap nothing may retire | `tb/env/tb_env.svh` |
 | Self-checking tests | riscv-tests compute and compare their own results and report through `tohost` | `tests/env/` |
 
 The model is written from the ISA document, not from the RTL, and is
@@ -42,6 +43,7 @@ trusted. Bus memory and model memory are loaded by two different loaders.
 | Source | Purpose |
 |---|---|
 | riscv-tests rv32ui (42 tests) | directed, community-written, each instruction's corner cases |
+| Directed tests (`tests/directed/`, 4 tests) | written for this core after the bug-injection campaign exposed holes: FENCE.I over instructions already in flight, and instructions directly behind a trap |
 | Constrained-random generator (`tb/gen/rv_gen.svh`) | SV classes with `randomize()`; knobs for mix, dependency distance, branch direction, loops, address window and aliasing, boundary operands, x0 destinations, program ending |
 | Knob profiles (`scripts/regress.py`) | `default`, `alu_corner`, `mem_alias`, `branchy`, `hazard` |
 | Memory agent (`tb/env/mem_agent.svh`) | random wait states on each port, 5 profiles from 0% to 50% |
@@ -68,8 +70,8 @@ Status is the state at the last coverage run recorded in
 | A08 | Loads: size x byte offset x sign bit (sign and zero extension) | rv32ui, random (`mem_alias`) | scoreboard | `cg_load.x_op_off_msb` |
 | A09 | Stores: size x byte lane | rv32ui, random | scoreboard, end-of-test memory compare | `cg_store.x_op_off` |
 | A10 | x0 as destination of every writing class discards the result | random (`p_x0`) | scoreboard, SVA `a_x0_*` | `cg_misc.cp_x0` |
-| A11 | FENCE, FENCE.I (self-modifying code) | rv32ui `fence_i`, random | scoreboard | `cg_misc.cp_op`, `cg_pipe.cp_redirect.fence_i` |
-| A12 | Exceptions: illegal instruction, ECALL, EBREAK, load / store / instruction-address misaligned | random program endings | scoreboard (trap + cause), SVA `a_trap_flushes`, `a_nothing_after_trap` | `cg_misc.cp_trap` |
+| A11 | FENCE, FENCE.I (self-modifying code), including patching the instructions already fetched behind FENCE.I | rv32ui `fence_i`, directed `smc_fencei`, random | scoreboard | `cg_misc.cp_op`, `cg_pipe.cp_redirect.fence_i` |
+| A12 | Exceptions: illegal instruction, ECALL, EBREAK, load / store / instruction-address misaligned | random program endings, directed `trap_*` | scoreboard (trap + cause), SVA `a_trap_flushes`, `a_nothing_after_trap` | `cg_misc.cp_trap` |
 | A13 | Back-to-back taken control transfers | random | scoreboard | `cg_misc.cp_b2b_taken` |
 | A14 | Register dependency distance 1, 2, 3, 4, 5+ for each consumer type and operand | random (`p_dep`, `dep_max`) | scoreboard | `cg_dep.x_rs1`, `cg_dep.x_rs2` |
 
@@ -97,6 +99,8 @@ Status is the state at the last coverage run recorded in
 | P18 | Data requests only from valid, non-trapping loads and stores; stores always carry a mask | all | SVA `a_dmem_req_legal`, `a_store_has_mask`, end-of-test memory compare | (assertion only) |
 | P19 | No fetch after halt, PC always word aligned | all | SVA `a_halted_quiet`, `a_pc_aligned` | (assertion only) |
 | P20 | x0 reads as zero on both register-file ports and is never write-enabled | all | SVA `a_x0_read_zero`, `a_x0_never_written` | (assertion only) |
+| P21 | No spurious load-use stall when an unused register field of the ID instruction happens to name the load's destination | random (field aliasing in LUI/AUIPC) | SVA `a_loaduse_real` | `cg_pipe.cp_unused_field_matches_load` |
+| P22 | Nothing behind a trap takes effect: no retirement, no memory write, during and after the drain window | directed `trap_*`, random trap endings | bench drain check, end-of-test memory compare, SVA `a_trap_flushes`, `a_nothing_after_trap` | `cg_pipe.cp_trap_kills_redirect`, `cp_trap_kills_loaduse` |
 
 ## 4. Sign-off criteria
 

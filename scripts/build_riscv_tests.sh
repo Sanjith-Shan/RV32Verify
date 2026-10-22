@@ -34,3 +34,18 @@ for t in $tests; do
   n=$((n+1))
 done
 echo "built $n rv32ui tests from riscv-tests $RISCV_TESTS_COMMIT into $OUT"
+
+# directed tests written for this core (tests/directed), same environment
+DOUT="$ROOT/build/tests/directed"
+mkdir -p "$DOUT"
+n=0
+for s in "$ROOT"/tests/directed/*.S; do
+  t=$(basename "$s" .S)
+  "${CROSS}gcc" -march=rv32i_zifencei -mabi=ilp32 -static -mcmodel=medany -fvisibility=hidden \
+    -nostdlib -nostartfiles -I"$ROOT/tests/env" -I"$SRC/isa/macros/scalar" \
+    -T"$ROOT/tests/env/link.ld" "$s" -o "$DOUT/$t.elf"
+  "${CROSS}objdump" -d "$DOUT/$t.elf" > "$DOUT/$t.dump"
+  python3 "$ROOT/scripts/elf2hex.py" "$DOUT/$t.elf" "$DOUT/$t.hex"
+  n=$((n+1))
+done
+echo "built $n directed tests into $DOUT"

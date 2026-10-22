@@ -23,6 +23,9 @@ same way.
 |---|---|---|---|---|
 | 1 | coverage model | SVA cover vs covergroup disagreement | `cp_stall_then_forward` 0 hits over 122 runs while the SVA cover for the same event had 458 | cycle-count off by one in the sampling logic |
 | 2 | coverage model | coverage hole review | `cp_trap.insn_misaligned` 0 hits over 100 seeds although the generator ends about 4% of programs with a misaligned jump | the coverpoint guard used `cause != 0` to mean "trapped", and cause 0 is a real cause |
+| 3 | bench end-of-test logic | bug-injection campaign | `BUG_TRAP_NO_KILL` escaped every run | the test ended in the same cycle the trap retired, so an instruction that wrongly survived behind the trap was never observed |
+| 4 | test plan (stimulus) | bug-injection campaign | `BUG_FENCEI_NO_FLUSH` escaped every run, including rv32ui `fence_i` | no test patched an instruction that was already fetched when FENCE.I executed, the only case where FENCE.I matters in this pipeline |
+| 5 | stimulus and coverage model | bug-injection campaign | `BUG_LOADUSE_IGNORES_USE` (spurious stalls) never seen in random runs | the precondition (an unused register field naming the load's destination) occurred twice in 25 programs, and no coverage bin tracked it |
 
 ---
 
@@ -74,3 +77,67 @@ been hit.
 **Lesson.** Encoding "no event" as a value that is also a legal event value
 hides that event. The RTL makes the same choice (`cause` is only meaningful
 when `trap` is set), and the coverage model should have followed it.
+
+## 3. The test ended too early to see a trap leak
+
+**Symptom.** Bug-injection round 1: `BUG_TRAP_NO_KILL` (a trap in MEM does
+not kill the instruction in EX) passed all 107 runs, with and without
+assertions.
+
+**Localization.** With the bug, the instruction behind the trap moves into
+MEM one cycle after the trap and retires one cycle after it. The
+environment stopped the test in the cycle the trap retired, so that
+retirement never happened inside the simulation. The SVA `a_trap_flushes`
+would have fired one cycle later, which was also after the end.
+
+**Fix.** A drain window (`tb/env/tb_env.svh`): after the end condition the
+core keeps running for 30 cycles with every checker live, and after a trap
+any further retirement fails the test. In round 2 the bug was caught, but by
+only 1 run: just 4 of the 25 random programs end in a trap, and the bug only
+shows if an instruction happens to be in EX behind the trap (with heavy
+fetch wait states there often is none). Three directed tests (`trap_*`) now
+put a store, a taken branch and a load-use pair directly behind a trap.
+
+**Lesson.** "When does the test end" is part of the checker. Ending on the
+first sign of success hides whatever was still in flight.
+
+## 4. FENCE.I was only tested where it does not matter
+
+**Symptom.** Round 1: `BUG_FENCEI_NO_FLUSH` (FENCE.I does not refetch)
+passed every run, including the official `fence_i` test.
+
+**Localization.** In this pipeline stores reach memory in MEM, two stages
+ahead of fetch. A stale instruction can only exist if it was fetched before
+the store wrote memory, which means it sits right behind the FENCE.I. The
+official test patches code that runs much later, so it passes with or
+without the flush. The random generator never writes to code at all.
+
+**Fix.** Directed test `tests/directed/smc_fencei.S`, which patches the
+first and the second instruction after FENCE.I (word store and byte stores)
+and patches a jump. Caught in round 2.
+
+**Lesson.** A compliance test checks the architectural promise for the
+code it contains; whether it reaches the micro-architectural window where the
+promise is hard to keep is a separate question, and it has to be asked per
+design.
+
+## 5. The precondition for a spurious stall never occurred
+
+**Symptom.** Rounds 1 and 2: `BUG_LOADUSE_IGNORES_USE` (load-use check ignores
+whether a register field is a real source) was caught only by two rv32ui
+tests, never by the 25 random programs.
+
+**Localization.** The bug only shows when the instruction right after a
+load does not read rs1 or rs2 but has the load's destination number in
+those bits (LUI, AUIPC, JAL, FENCE, SYSTEM). A static count over the 25
+programs found 357 load-then-such-instruction pairs and only 2 with
+matching bits, roughly the 1 in 32 chance. No coverage bin tracked it.
+
+**Fix.** The generator now aliases the would-be rs1 bits of LUI/AUIPC to
+the previous destination half of the time, and `cg_pipe` gained the bin
+`cp_unused_field_matches_load`.
+
+**Lesson.** A coverage model written from the list of features covers what
+the design must do. A bug of the form "does something it should not" needs
+its own precondition covered, and that only became obvious after measuring
+which injected bugs escaped.
