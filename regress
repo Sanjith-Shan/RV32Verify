@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# One command to build and run the whole regression. See scripts/regress.py.
+cd "$(dirname "$0")" || exit 1
+if [ ! -x .cache/toolchain/oss-cad-suite/bin/verilator ] && ! command -v verilator >/dev/null; then
+  bash scripts/setup_toolchain.sh || exit 1
+fi
+exec python3 scripts/regress.py "$@"

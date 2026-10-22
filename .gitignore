@@ -1,8 +1,16 @@
+# build outputs, simulator databases, waveforms
 build/
 obj_dir/
 *.vcd
 *.fst
 *.vpd
 coverage*.dat
+# project-local toolchain and fetched sources (scripts/setup_toolchain.sh)
+.cache/
 tools/
+# formal run directories
+formal/**/work*/
+formal/riscv-formal/
+__pycache__/
 .minipc-busy
+.minipc-runs/
