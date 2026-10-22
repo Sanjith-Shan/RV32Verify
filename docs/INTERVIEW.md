@@ -223,3 +223,14 @@ in-order: memory ordering is already sequential, so FENCE has nothing to do.
 FENCE.I must make earlier stores visible to fetch; flushing and refetching
 everything younger does that, because the store has already reached memory
 by the time the younger instructions are fetched again.
+
+**What did formal add, and what does a bounded pass mean?** riscv-formal
+checks every instruction, register-file consistency, PC sequencing,
+causality, unique retirement order and liveness with both memories left
+completely free, which no simulation can do. All 45 checks pass, but they
+are bounded: "no failure within 15 to 30 cycles after reset", for every
+possible program and memory timing in that window. To show the passes are
+not vacuous, I ran the same flow on a build with a planted SLT bug: the SLT
+check fails with a counterexample and the cover check shows instructions do
+retire inside the window. The hardest check, PC-forward at depth 30, took
+52 minutes; I raced two solvers on it rather than lower the depth.

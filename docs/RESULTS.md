@@ -37,7 +37,7 @@ slightly different counts (see the M3 section).
 | SVA: 23 assertions bound into the core | 0 failures in all runs above | same |
 | SVA cover properties | load-use then forward 1744, redirect deferred by a data wait 321, trap beats a younger redirect 21, wait then load-use 70, both operands forwarded from different stages 427 | same |
 | Wall time of that regression | 15 min 23 s (2 parallel jobs) | same |
-| Random program generation time | about 6.7 s per 950-instruction program, almost all in the z3 constraint solver; was about 9.5 s before immediates were moved out of the solver into `post_randomize()` | `/usr/bin/time ./sim/base/simv +gen +seed=1 +quiet` (in `build/`, with `scripts/env.sh` sourced) |
+| Random program generation plus simulation time, one program | 7.3 s and 7.9 s in two runs (seed 1, 941 instructions retired), almost all of it in the z3 constraint solver; re-measured at the M4 commit because the original M2 measurement was taken with a mistyped seed. Moving immediates out of the solver into `post_randomize()` cut it from about 9.5 s to about 6.7 s (that before/after pair was measured on seed 0) | `/usr/bin/time ./sim/base/simv +gen +seed=1 +verilator+seed+1 +quiet` (in `build/`, with `scripts/env.sh` sourced) |
 
 ## Milestone 3 (2026-10-22)
 
@@ -53,3 +53,42 @@ slightly different counts (see the M3 section).
 | Core in lockstep, 4 directed tests, both wait profiles | 4 / 4 pass in each | `./regress riscv-tests` |
 | Coverage regression after the M3 generator change: random seeds 1-250 | 250 / 250 pass, 248,151 instructions checked in lockstep, 393,647 cycles | `./regress coverage -n 250 -j 2` |
 | Functional coverage after M3 (one bin added) | **97.7% (1282 / 1312)**; all non-ALU-operand items 100%; 30 open bins, all operand-value pairs in the ALU crosses | same; [COVERAGE.md](COVERAGE.md) |
+
+## Milestone 4 (2026-10-22)
+
+### Formal verification: riscv-formal (SymbiYosys)
+
+| Result | Number | Command |
+|---|---|---|
+| riscv-formal checks for RV32I, aligned-memory convention, memories fully unconstrained (any data, any ready/wait pattern) | **45 / 45 PASS** at the depths in `formal/rv32verify/checks.cfg`; no depth was lowered | `./regress formal` (or `bash scripts/run_formal.sh`) |
+| Instruction checks (`insn_*`, one per RV32I instruction, 37 checks) | all PASS, bounded model check to depth 20; 6 to 44 s each | same |
+| `reg`, `pc_fwd`, `pc_bwd`, `causal`, `unique`, `liveness`, `ill`, `cover` | all PASS; `reg` depth 25 (445 s), `pc_fwd` depth 30 (3130 s), `pc_bwd`, `causal`, `unique`, `liveness` depth 30 (5 to 14 s), `ill` depth 15, `cover` depth 15 | same |
+| Sanity: the same flow on the `BUG_SLT_UNSIGNED` build | `insn_slt_ch0` FAIL with a counterexample trace; `cover` PASS (instructions do retire within the depth, so passes are not vacuous) | `CHECKS="insn_slt_ch0 cover" bash scripts/run_formal.sh -DBUG_SLT_UNSIGNED` |
+| Solver | boolector via yosys-smtbmc for every check. `pc_fwd` was run with yices and boolector in parallel (same model, same depth); boolector finished first. Two bitwuzla runs on the Windows host were started to use the two cores WSL2 does not get, and stopped once boolector passed | engine section of `checks/pc_fwd_ch0.sby` changed to two engines |
+| Wall time | sum of check times 4160 s; on this machine a full run takes 1 to 2 hours with 2 parallel jobs, dominated by `pc_fwd` | same |
+
+A bounded check proves the property for every execution up to that many
+cycles after reset, not for all time. riscv-formal toolchain: commit
+c992aa61fdfe0846c5ed90324c596202a1c69b76; the RTL is elaborated with
+yosys-slang into one Verilog netlist first because riscv-formal reads plain
+Verilog. Per-check results: `build/reports/formal_full_run.json` (not in git).
+
+### Synthesis sanity check (Yosys + nextpnr-ecp5)
+
+| Result | Number | Command |
+|---|---|---|
+| Target | Lattice ECP5 LFE5U-25F, CABGA381, speed grade 6; top = `synth/rv32_synth_top.sv` (both memory ports, RVFI port left unconnected and removed) | `./regress synth` |
+| Yosys `synth_ecp5` cells | 3716 LUT4, 1374 flip-flops, 110 carry (CCU2C) cells, no block RAM | same |
+| nextpnr utilisation | 3968 / 24288 logic cells (16%), 1374 / 24288 flip-flops (5%), 171 / 197 I/O | same |
+| Fmax | **56.86 MHz** (critical path 17.6 ns: 6.0 ns logic, 11.6 ns routing; unconstrained pins, placer seed 1) | same |
+
+The register file uses flip-flops (992 of the 1374) because it is reset;
+without the reset it could map to distributed RAM. No timing work has been
+done on the RTL.
+
+### Continuous integration
+
+| Result | Number | Command |
+|---|---|---|
+| GitHub Actions on ubuntu-24.04, clean machine, toolchain downloaded by the same script | lint, model qualification, riscv-tests in both wait profiles and 25 random seeds all pass; 2 min 56 s for the whole job | `.github/workflows/regress.yml`, run 39741726613 |
+

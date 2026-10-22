@@ -6,6 +6,8 @@
     ./regress random -n 200       constrained-random seeds 1..200
     ./regress coverage -n 400     random seeds with merged functional coverage report
     ./regress bugs                bug-injection campaign (docs/BUG_INJECTION.md)
+    ./regress formal              riscv-formal checks with SymbiYosys (about an hour)
+    ./regress synth               Yosys + nextpnr-ecp5 size / timing sanity check
     ./regress lint | iss | build
 
 Results are printed and written to build/reports/<suite>.json.
@@ -299,10 +301,31 @@ def suite_coverage(a):
     return ok
 
 
+def suite_formal(a):
+    """riscv-formal checks (SymbiYosys) on the core; see scripts/run_formal.sh."""
+    e = env()
+    e["JOBS"] = str(a.jobs)
+    r = subprocess.run(["bash", "scripts/run_formal.sh"], cwd=ROOT, env=e, text=True, capture_output=True)
+    summary = [l for l in r.stdout.splitlines() if l.startswith("riscv-formal:") or l.startswith("  ")]
+    log("[formal] " + NL.join(summary))
+    return bool(summary) and "FAIL" not in summary[0] and "ERROR" not in summary[0]         and "UNKNOWN" not in summary[0] and "NOT RUN" not in summary[0]
+
+
+def suite_synth(a):
+    """Yosys + nextpnr-ecp5 size and timing sanity check; see scripts/synth.sh."""
+    r = sh(["bash", "scripts/synth.sh"])
+    log("[synth] " + r.stdout.strip().replace(NL, NL + "        "))
+    return r.returncode == 0
+
+
+NL = chr(10)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("suite", nargs="?", default="all",
-                    choices=["all", "lint", "iss", "build", "riscv-tests", "random", "coverage", "bugs"])
+                    choices=["all", "lint", "iss", "build", "riscv-tests", "random", "coverage", "bugs",
+                             "formal", "synth"])
     ap.add_argument("-n", type=int, default=50, help="number of random seeds")
     ap.add_argument("--seed0", type=int, default=1, help="first random seed")
     ap.add_argument("-j", "--jobs", type=int, default=os.cpu_count() or 2)
@@ -322,7 +345,7 @@ def main():
         log("REGRESSION " + ("PASS" if ok else "FAIL"))
         return 0 if ok else 1
     fn = {"lint": suite_lint, "iss": suite_iss, "riscv-tests": suite_riscv_tests, "random": suite_random,
-          "coverage": suite_coverage}.get(a.suite)
+          "coverage": suite_coverage, "formal": suite_formal, "synth": suite_synth}.get(a.suite)
     if fn is None:
         import importlib.util
         spec = importlib.util.spec_from_file_location(a.suite, os.path.join(ROOT, "scripts", f"suite_{a.suite}.py"))

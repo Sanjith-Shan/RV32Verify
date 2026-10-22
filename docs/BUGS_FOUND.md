@@ -10,9 +10,10 @@ and are never presented as findings.
 The bench has not found a functional bug in the core RTL so far. The core
 passed riscv-tests and the first random seeds in lockstep on its first run.
 That is not proof it is correct. The [bug-injection campaign](BUG_INJECTION.md)
-measures whether the bench would have noticed if it were wrong, and formal
-checks with riscv-formal give a second, independent opinion (results below
-and in [RESULTS.md](RESULTS.md)).
+measures whether the bench would have noticed if it were wrong, and the
+45 riscv-formal checks give a second, independent opinion: they all pass at
+their configured depths and also found no RTL bug ([RESULTS.md](RESULTS.md),
+milestone 4).
 
 The real bugs found so far were in the verification environment itself. A
 coverage model that reports a hole that is not there, or misses a hole that

@@ -33,6 +33,7 @@ the pipeline gets there.
 | Watchdog / timeout | no retirement for `hang_cycles` (deadlock, lost handshake) | `tb/env/tb_env.svh` |
 | Drain window | after the end condition the core keeps running for 30 cycles with every checker live; after a trap nothing may retire | `tb/env/tb_env.svh` |
 | Self-checking tests | riscv-tests compute and compare their own results and report through `tohost` | `tests/env/` |
+| Formal (riscv-formal, SymbiYosys) | every RV32I instruction, register-file consistency, PC sequencing forward and backward, causality, unique retirement order, liveness and illegal-instruction trapping, for all programs and all memory timings up to a bounded depth (15 to 30 cycles) | `formal/rv32verify/`, `scripts/run_formal.sh` |
 
 The model is written from the ISA document, not from the RTL, and is
 qualified on its own against riscv-tests (`./regress iss`) before it is
